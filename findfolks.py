@@ -14,7 +14,7 @@ app = flask.Flask(__name__)
 #configure MySQL
 conn = pymysql.connect(host='localhost',
                        user='root',
-                       password='cha3uvaf',
+                       password='root',
                        db='findfolks',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
