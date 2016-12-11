@@ -14,7 +14,7 @@ app = flask.Flask(__name__)
 #configure MySQL
 conn = pymysql.connect(host='localhost',
                        user='root',
-                       password='root',
+                       password='cha3uvaf',
                        db='findfolks',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
@@ -30,7 +30,7 @@ def index():
       error = None
     #cursor used to send queries
     cursor = conn.cursor()
-    query = 'SELECT title, description, start_time, end_time, location_name, zipcode FROM `an_event` WHERE start_time <= DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 3 DAY)'
+    query = 'SELECT title, description, start_time, end_time, location_name, zipcode FROM `an_event` WHERE start_time <= DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 3 DAY) AND start_time >= CURRENT_TIMESTAMP ORDER BY an_event.start_time ASC'
     cursor.execute(query)
     eventData = cursor.fetchall()
 
@@ -119,24 +119,94 @@ def home():
 @app.route('/logout')
 def logout():
   flask.session.pop('username')
-  return flask.redirect('/')
+  return flask.redirect('/login')
 
 #Jessica
 @app.route('/upcomingEvents', methods = ['GET', 'POST'])
 def upcomingEvents():
-  return flask.render_template('upcomingEvents.html')
+  username = flask.session['username']
+  cursor = conn.cursor()
+  threeDay = 'SELECT title, description, start_time, end_time, location_name, zipcode FROM sign_up NATURAL JOIN an_event WHERE username = %s AND start_time >= DATE_ADD(CURRENT_DATE, INTERVAL 1 DAY) AND start_time <= DATE_ADD(CURRENT_DATE, INTERVAL 3 DAY)  ORDER BY an_event.start_time ASC'
+  cursor.execute(threeDay,(username))
+  threeDayEvents = cursor.fetchall()
+  currentDay = 'SELECT title, description, start_time, end_time, location_name, zipcode FROM sign_up NATURAL JOIN an_event WHERE username = %s AND DATE(start_time) = CURRENT_DATE() ORDER BY an_event.start_time ASC'
+  cursor.execute(currentDay, (username))
+  currentDayEvents = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('upcomingEvents.html', threeDayEvents = threeDayEvents, currentDayEvents = currentDayEvents)
+
 #Jessica
 @app.route('/signup', methods = ['GET', 'POST'])
 def signUp():
-  return flask.render_template('signUp.html')
+  username = flask.session['username']
+  event = flask.request.form['event']
+  cursor = conn.cursor()
+  query = 'INSERT INTO sign_up (event_id, username) VALUES (%s, %s)'
+  cursor.execute(query, (event, username))
+  conn.commit()
+  cursor.close()
+  success = "You have signed up for this event!"
+  flask.session['success'] = success
+  return flask.redirect(flask.url_for('search', success = success))
+
 #Jessica
 @app.route('/search', methods = ['GET', 'POST'])
 def search():
-  return flask.render_template('search.html')
+  if('success' in flask.session):
+  	success = flask.session['success']
+  	flask.session.pop('success')
+  else:
+  	success = None
+  username = flask.session['username']
+  cursor = conn.cursor()
+  query = 'SELECT * FROM about NATURAL JOIN organize NATURAL JOIN an_event WHERE (category, keyword) IN (SELECT category, keyword FROM interested_in WHERE username = %s) AND event_id NOT IN (SELECT event_id FROM sign_up WHERE username = %s)'
+  cursor.execute(query, (username, username))
+  events = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('search.html', events = events, success =success)
 #Jessica
 @app.route('/createEvent', methods = ['GET', 'POST'])
 def createEvent():
-  return flask.render_template('createEvent.html')
+  if('success' in flask.session):
+    success = flask.session['success']
+    flask.session.pop('success')
+  else:
+    success = None
+  username = flask.session['username']
+  cursor = conn.cursor()
+  query = 'SELECT * FROM belongs_to NATURAL JOIN a_group WHERE username = %s AND authorized = 1'
+  cursor.execute(query, (username))
+  groups = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('createEvent.html', groups = groups, success = success)
+@app.route('/createEventForm', methods = ['GET', 'POST'])
+def createEventForm():
+  group_id = flask.request.form['group']
+  flask.session['group'] = group_id
+  return flask.render_template('createEventForm.html')
+@app.route('/createEventAuth', methods = ['GET', 'POST'])
+def createEventAuth():
+  group_id = flask.session['group']
+  username = flask.session['username']
+  title = flask.request.form['title']
+  description = flask.request.form['description']
+  start_time = flask.request.form['start_time']
+  end_time = flask.request.form['end_time']
+  location_name = flask.request.form['location_name']
+  zipcode = flask.request.form['zipcode']
+  cursor = conn.cursor()
+  query = 'INSERT INTO an_event (title, description, start_time, end_time, location_name, zipcode) VALUES (%s, %s, %s, %s, %s, %s)'
+  cursor.execute(query, (title, description, start_time, end_time, location_name, zipcode))
+  last_id = cursor.lastrowid
+  insertOrganize = 'INSERT INTO organize (event_id, group_id) VALUES (%s, %s)'
+  cursor.execute(insertOrganize, (last_id, group_id))
+  insertSignUp = 'INSERT INTO sign_up (event_id, username) VALUES (%s, %s)'
+  cursor.execute(insertSignUp, (last_id, username))
+  conn.commit()
+  cursor.close()
+  flask.session.pop('group')
+  flask.session['success'] = "Successfully created the event!"
+  return flask.redirect(flask.url_for('createEvent'))
 #Kristen
 @app.route('/rateEvent', methods = ['GET', 'POST'])
 def rateEvent():
