@@ -223,22 +223,101 @@ def friendsEvent():
 @app.route('/postInEvent', methods = ['GET', 'POST'])
 def postInEvent():
   return flask.render_template('postInEvent.html')
-#Mali
 @app.route('/makeFriends', methods = ['GET', 'POST'])
 def makeFriends():
-  return flask.render_template('makeFriends.html')
+  cursor = conn.cursor()
+  query = 'SELECT username from member where zipcode = (Select zipcode from member where username = %s) and username != %s and username not in (Select friend_to from friend where friend_of = %s)'
+  username = flask.session['username']
+  cursor.execute(query, (username, username, username))
+  listOfmembers = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('makeFriends.html', listOfmembers = listOfmembers)
+@app.route('/makeFriendsAuth', methods = ['GET', 'POST'])
+def makeFriendsAuth(): 
+  friendName = flask.request.form['friend_name']
+  username = flask.session["username"]
+  cursor = conn.cursor()
+  query = 'INSERT INTO friend (friend_of, friend_to) VALUES (%s, %s )'
+  cursor.execute(query, (username, friendName))
+  conn.commit()
+  return flask.render_template('makeFriendsAuth.html')
 #Mali
 @app.route('/joinGroup', methods = ['GET', 'POST'])
 def joinGroup():
-  return flask.render_template('joinGroup.html')
+  cursor = conn.cursor() 
+  #query here
+  #Display all the groups from the a_group table
+
+  queryListGroups = 'SELECT DISTINCT group_id, group_name, description, creator FROM belongs_to NATURAL JOIN a_group WHERE group_id NOT IN (SELECT group_id FROM belongs_to WHERE username = %s)'
+  username = flask.session["username"]
+  cursor.execute(queryListGroups, username)
+  listOfGroups = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('joinGroups.html', groups = listOfGroups)
+ 
+@app.route('/populateBelongsTo', methods = ['GET', 'POST'])
+def populateBelongsTo(): 
+  #The selected group will be joined here
+  group_id = flask.request.form['group_id']
+  authorized = 0
+  username = flask.session["username"]
+  cursor = conn.cursor()
+  #query here 
+  belongsToQuery = 'INSERT INTO belongs_to (group_id, username, authorized) VALUES (%s, %s, %s)'
+  cursor.execute(belongsToQuery, (group_id, username, authorized))
+  conn.commit()
+  cursor.close()
+  return flask.render_template('populateBelongsTo.html', group_id = group_id)
+
 #Mali
 @app.route('/createGroup', methods = ['GET', 'POST'])
 def createGroup():
   return flask.render_template('createGroup.html')
+
+@app.route('/createGroupAuth', methods = ['GET', 'POST'])
+def createGroupAuth(): 
+  group_name = flask.request.form['group_name']
+  desc = flask.request.form['description']
+  username = flask.session['username']
+  cursor = conn.cursor() 
+  insertGroupQuery = 'INSERT INTO a_group (group_name, description, creator) VALUES (%s, %s, %s) '
+  cursor.execute(insertGroupQuery, (group_name, desc, username))  
+  changeAuthorization = 'INSERT INTO belongs_to (group_id, username, authorized) VALUES (last_insert_id(), %s, %s)'
+  cursor.execute(changeAuthorization, (username, 1))
+  conn.commit()
+  cursor.close()
+  return flask.render_template('createGroupSuccess.html')
+
 #Mali
 @app.route('/grantAccess', methods = ['GET', 'POST'])
 def grantAccess():
-  return flask.render_template('grantAccess.html')
+  username = flask.session['username']
+  listGroupsQuery = 'SELECT distinct group_id, group_name FROM a_group NATURAL JOIN belongs_to where username = %s and authorized = %s'
+  cursor = conn.cursor()
+  cursor.execute(listGroupsQuery, (username, 1))
+  listOfGroups = cursor.fetchall()
+  return flask.render_template('grantAccess.html', groups = listOfGroups)
+
+@app.route('/grantAccessAuth', methods = ['GET', 'POST'])
+def grantAccessAuth(): 
+  group_id = flask.request.form['group_id']
+  flask.session['group_id'] = group_id
+  showMemberQuery = 'SELECT firstname, lastname, username FROM member NATURAL JOIN belongs_to where belongs_to.group_id = %s and authorized != %s'
+  cursor= conn.cursor()
+  cursor.execute(showMemberQuery, (group_id, 1))
+  listOfmembers = cursor.fetchall()
+  cursor.close()
+  return flask.render_template('grantAccessMembers.html', members = listOfmembers)
+
+@app.route('/changeAccess', methods = ['GET', 'POST'])
+def changeAccess(): 
+  memberInfo = flask.request.form['memberInfo']
+  group_id = flask.session['group_id']
+  changeAuth = 'UPDATE belongs_to SET authorized = %s WHERE  belongs_to.username = %s and belongs_to.group_id = %s'
+  cursor = conn.cursor()
+  cursor.execute(changeAuth, (1, memberInfo, group_id))
+  conn.commit()
+  return flask.render_template('grantAccessSuccess.html')
 
 
 app.secret_key = 'SECRETOFTHESECRETKEY'
