@@ -121,7 +121,6 @@ def logout():
   flask.session.pop('username')
   return flask.redirect('/login')
 
-#Jessica
 @app.route('/upcomingEvents', methods = ['GET', 'POST'])
 def upcomingEvents():
   username = flask.session['username']
@@ -135,7 +134,6 @@ def upcomingEvents():
   cursor.close()
   return flask.render_template('upcomingEvents.html', threeDayEvents = threeDayEvents, currentDayEvents = currentDayEvents)
 
-#Jessica
 @app.route('/signup', methods = ['GET', 'POST'])
 def signUp():
   username = flask.session['username']
@@ -149,7 +147,6 @@ def signUp():
   flask.session['success'] = success
   return flask.redirect(flask.url_for('search', success = success))
 
-#Jessica
 @app.route('/search', methods = ['GET', 'POST'])
 def search():
   if('success' in flask.session):
@@ -164,7 +161,7 @@ def search():
   events = cursor.fetchall()
   cursor.close()
   return flask.render_template('search.html', events = events, success =success)
-#Jessica
+
 @app.route('/createEvent', methods = ['GET', 'POST'])
 def createEvent():
   if('success' in flask.session):
@@ -207,22 +204,94 @@ def createEventAuth():
   flask.session.pop('group')
   flask.session['success'] = "Successfully created the event!"
   return flask.redirect(flask.url_for('createEvent'))
-#Kristen
+
 @app.route('/rateEvent', methods = ['GET', 'POST'])
 def rateEvent():
-  return flask.render_template('rateEvent.html')
-#kristen
+  username = flask.session['username']
+  cursor = conn.cursor()
+  revents = 'SELECT * FROM an_event'
+  cursor.execute(revents)
+  rateEventsData = cursor.fetchall()
+  cursor.close()
+  error = None
+  return flask.render_template('rateEvent.html', events = rateEventsData)
+
+@app.route('/submitRating', methods = ['GET', 'POST'])
+def submitRating():
+  event = flask.request.form['event']
+  event = event.split(" ")
+  event_id = event[0]
+  rating = flask.request.form.getlist('rating')
+  username = flask.session.get('username')
+  cursor = conn.cursor()
+  eventID = 'SELECT * FROM an_event NATURAL JOIN sign_up WHERE username = %s AND event_id = %s AND start_time <= CURDATE()'
+  cursor.execute(eventID,(username, event_id))
+  eventsIDData = cursor.fetchall()
+  error = None
+  if (eventsIDData):
+    ins = 'UPDATE `sign_up` SET `rating` =%s WHERE `event_id` = %s AND `username` = %s'
+    cursor.execute(ins, (rating,event_id,username))
+    conn.commit()
+    cursor.close()
+    return flask.render_template('submitRating.html')
+  else:
+    error = "Sorry, you can't rate this event because it either hasn't happened yet or you haven't signed up for it!"
+    flask.session['error']= error
+    return flask.render_template('rateError.html', error=error)
+
 @app.route('/averageRatings', methods = ['GET', 'POST'])
-def averageRatings():
-  return flask.render_template('averageRatings.html')
-#Kristen
+def averageRatings(): 
+  username = flask.session.get('username')
+  cursor = conn.cursor()
+  rate = 'SELECT title, group_id, AVG(rating) as rate FROM sign_up NATURAL JOIN an_event as e NATURAL JOIN organize WHERE group_id IN (SELECT group_id FROM belongs_to WHERE username = %s) AND start_time >= DATE_SUB(CURRENT_DATE, INTERVAL 3 DAY) AND start_time < CURRENT_DATE GROUP BY e.event_id'
+  cursor.execute(rate, (username))
+  ratings = cursor.fetchall()
+  cursor.close()
+  error = None
+  return flask.render_template('averageRatings.html', rates = ratings)
+
 @app.route('/friendsEvent', methods = ['GET', 'POST'])
 def friendsEvent():
-  return flask.render_template('friendsEvent.html')
-#Kristen
+  username = flask.session.get('username')
+  cursor = conn.cursor()
+  frEvents = 'SELECT event_id, title, username FROM sign_up NATURAL JOIN an_event WHERE username IN (SELECT friend_of FROM friend WHERE friend_to = %s)'
+  cursor.execute(frEvents, username)
+  friendEventsData = cursor.fetchall()
+  cursor.close()
+  error = None
+  if (friendEventsData):
+    return flask.render_template('friendsEvent.html', friend = friendEventsData)
+  else:
+    error = "Sorry, we couldn't find any of your friends who are signed up for events!"
+    flask.session['error']= error
+    return flask.render_template('friendsEvent.html', error = error)
+
 @app.route('/postInEvent', methods = ['GET', 'POST'])
 def postInEvent():
-  return flask.render_template('postInEvent.html')
+  username = flask.session.get('username')
+  cursor = conn.cursor()
+  pevent = 'SELECT * FROM an_event NATURAL JOIN sign_up WHERE username = %s'
+  cursor.execute(pevent,username)
+  eventData = cursor.fetchall()
+  cursor.close()
+  error = None
+  return flask.render_template('postInEvent.html', events = eventData)
+
+@app.route('/eventPosted', methods = ['GET', 'POST'])
+def eventPosted():
+  username = flask.session.get('username')
+  post = flask.request.form['post']
+  event = flask.request.form['event']
+  event = event.split(" ")
+  event_id = event[0]
+  cursor = conn.cursor()
+  posts = 'INSERT INTO post_in (event_id,username,post) VALUES (%s,%s,%s)'
+  cursor.execute(posts,(event_id,username,post))
+  conn.commit()
+  cursor.close()
+  error = None
+  return flask.render_template('eventPosted.html')
+
 @app.route('/makeFriends', methods = ['GET', 'POST'])
 def makeFriends():
   cursor = conn.cursor()
@@ -241,13 +310,10 @@ def makeFriendsAuth():
   cursor.execute(query, (username, friendName))
   conn.commit()
   return flask.render_template('makeFriendsAuth.html')
-#Mali
+
 @app.route('/joinGroup', methods = ['GET', 'POST'])
 def joinGroup():
   cursor = conn.cursor() 
-  #query here
-  #Display all the groups from the a_group table
-
   queryListGroups = 'SELECT DISTINCT group_id, group_name, description, creator FROM belongs_to NATURAL JOIN a_group WHERE group_id NOT IN (SELECT group_id FROM belongs_to WHERE username = %s)'
   username = flask.session["username"]
   cursor.execute(queryListGroups, username)
@@ -257,19 +323,16 @@ def joinGroup():
  
 @app.route('/populateBelongsTo', methods = ['GET', 'POST'])
 def populateBelongsTo(): 
-  #The selected group will be joined here
   group_id = flask.request.form['group_id']
   authorized = 0
   username = flask.session["username"]
   cursor = conn.cursor()
-  #query here 
   belongsToQuery = 'INSERT INTO belongs_to (group_id, username, authorized) VALUES (%s, %s, %s)'
   cursor.execute(belongsToQuery, (group_id, username, authorized))
   conn.commit()
   cursor.close()
   return flask.render_template('populateBelongsTo.html', group_id = group_id)
 
-#Mali
 @app.route('/createGroup', methods = ['GET', 'POST'])
 def createGroup():
   return flask.render_template('createGroup.html')
@@ -288,7 +351,6 @@ def createGroupAuth():
   cursor.close()
   return flask.render_template('createGroupSuccess.html')
 
-#Mali
 @app.route('/grantAccess', methods = ['GET', 'POST'])
 def grantAccess():
   username = flask.session['username']
